@@ -2,8 +2,10 @@
 VMを自動で構築する為のシステム案
 
 システム構成のイメージとしては下記
-Frontend -(WAF：ModSecurity)- Backend - Database ＆ Object Storage(Minio,RustFS,versitygw...etc) - DevopsTool/CICDTool(Jenkins, teamcity...etc)
 
+`Frontend -(WAF：ModSecurity)- Backend - Database ＆ Object Storage(Minio,RustFS,versitygw...etc) - DevopsTool/CICDTool(Jenkins, teamcity...etc)`
+
+```
 利用する技術スタックは「Terraform」、「Ansible」がメイン
 こうしておくことでVMwareやProxmox、Cloud(AWS,Azure,GCP...)などに対応しやすくなると思われる
 
@@ -18,6 +20,7 @@ Ansibleを利用しておくことで特定のパッチやUpdateをしやすく�
 
 パワーオンやパワーオフ、シャットダウンについては出来るだけAPIを介さずにTerraform,Ansibleで行いたい
 リアルタイムに画面反映が必要なものについての手立てがまだ定まっていない
+```
 
 
 ↓Chatgptに相談してみる↓
