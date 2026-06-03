@@ -1,0 +1,12 @@
+{% if runs %}
+<ul class="run-list">
+  {% for r in runs %}
+  <li>
+    <code>{{ r.id }}</code> — {{ r.project_id }} —
+    <span class="status">{{ r.status.value }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">まだ払い出し履歴がありません。</p>
+{% endif %}

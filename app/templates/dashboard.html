@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p class="muted">RustFS に Terraform / Ansible を配置すると、バックグラウンド worker が VM を払い出します。
+  払い出し後の <a href="/vms">仮想マシン管理</a> で電源・CPU・メモリ・ディスクを操作できます。</p>
+
+<section class="card">
+  <h2>ローカルエミュレータ</h2>
+  <ul>
+    <li><strong>Floci (AWS)</strong> — <code>:4566</code></li>
+    <li><strong>Floci-az (Azure)</strong> — <code>:4577</code> (Blob / Queue / Table / Functions)</li>
+    <li><strong>vcsim (vSphere)</strong> — <code>:8989</code></li>
+    <li><strong>mock-pve (Proxmox)</strong> — <code>:8006</code> (HTTPS, 自己署名)</li>
+    <li><strong>RustFS</strong> — S3 <code>:9000</code> / Console <code>:9001</code></li>
+  </ul>
+</section>
+
+<section class="card" hx-get="/api/partials/runs" hx-trigger="load" hx-target="#runs" hx-swap="innerHTML">
+  <h2>最近の払い出し</h2>
+  <div id="runs"><p class="muted">読み込み中…</p></div>
+</section>
+{% endblock %}

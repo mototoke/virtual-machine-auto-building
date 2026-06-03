@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p class="muted">Proxmox / vSphere / AWS(EC2) の VM を一覧表示し、電源操作・CPU・メモリ・ディスクを変更できます。</p>
+
+<div class="vm-layout">
+  <section class="card vm-list-panel">
+    <div class="panel-head">
+      <h2>一覧</h2>
+      <button type="button" class="btn-secondary"
+        hx-get="/api/partials/vms" hx-target="#vm-list" hx-swap="innerHTML">
+        更新
+      </button>
+    </div>
+    <div
+      id="vm-list"
+      hx-get="/api/partials/vms"
+      hx-trigger="load"
+      hx-swap="innerHTML"
+    >
+      <p class="muted">読み込み中…</p>
+    </div>
+  </section>
+
+  <section class="card vm-detail-panel" id="vm-detail">
+    <p class="muted">左の VM を選択してください。</p>
+  </section>
+</div>
+{% endblock %}

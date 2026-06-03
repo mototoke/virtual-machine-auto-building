@@ -1,0 +1,51 @@
+<div class="vm-detail">
+  <header class="vm-detail-head">
+    <h2>{{ vm.name }}</h2>
+    <span class="badge">{{ vm.provider.value }}</span>
+    <span class="power power-{{ vm.power_state.value }}">{{ vm.power_state.value }}</span>
+  </header>
+
+  <dl class="vm-specs">
+    <dt>ID</dt><dd><code>{{ vm.external_id }}</code></dt>
+    <dt>vCPU</dt><dd>{{ vm.cpus or "—" }}</dd>
+    <dt>メモリ</dt><dd>{% if vm.memory_mb %}{{ vm.memory_mb }} MB{% else %}—{% endif %}</dd>
+    <dt>ディスク</dt><dd>{% if vm.disk_gb %}{{ vm.disk_gb }} GB{% else %}—{% endif %}</dd>
+  </dl>
+
+  <section class="vm-actions">
+    <h3>電源操作</h3>
+    <div class="btn-group">
+      {% set labels = {
+        'start': '起動', 'stop': '強制停止', 'shutdown': 'シャットダウン',
+        'reboot': '再起動', 'reset': 'リセット'
+      } %}
+      {% for act in power_actions %}
+      <button
+        type="button"
+        class="btn-power"
+        hx-post="/api/vms/{{ vm.provider.value }}/{{ vm.external_id }}/power/{{ act }}"
+        hx-target="#vm-detail"
+        hx-swap="innerHTML"
+        hx-confirm="{{ labels.get(act, act) }} を実行しますか？"
+      >{{ labels.get(act, act) }}</button>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="vm-resize">
+    <h3>リソース変更</h3>
+    <form
+      class="form-row form-resize"
+      hx-post="/api/vms/{{ vm.provider.value }}/{{ vm.external_id }}/resize"
+      hx-target="#vm-detail"
+      hx-swap="innerHTML"
+    >
+      <label>vCPU <input type="number" name="cpus" min="1" max="128" value="{{ vm.cpus or 1 }}" /></label>
+      <label>メモリ (MB) <input type="number" name="memory_mb" min="128" step="128" value="{{ vm.memory_mb or 512 }}" /></label>
+      <label>ディスク (GB) <input type="number" name="disk_gb" min="1" value="{{ vm.disk_gb or 8 }}" /></label>
+      <button type="submit">適用</button>
+    </form>
+    <p class="muted small">AWS はインスタンスタイプ／EBS ボリューム経由で反映します。変更後は一覧の「更新」で再読み込みしてください。</p>
+  </section>
+
+</div>

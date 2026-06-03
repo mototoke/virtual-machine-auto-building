@@ -1,1 +1,19 @@
-# T.B.D.
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+*.retry
+pipeline-runs/
+data/floci-az/
+tmp/
+.DS_Store
+.idea/
+.vscode/
+!.vscode/extensions.json

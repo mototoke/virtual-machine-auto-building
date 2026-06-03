@@ -1,0 +1,4 @@
+aws_endpoint     = "http://floci:4566"
+vsphere_server   = "vcsim"
+vm_count         = 1
+vm_name_prefix   = "dev-vm"

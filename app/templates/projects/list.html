@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+
+<section class="card">
+  <h2>新規プロジェクト</h2>
+  <form
+    hx-post="/api/projects/form"
+    hx-on::after-request="htmx.ajax('GET', '/api/partials/projects', '#project-list')"
+    class="form-row"
+  >
+    <input type="text" name="name" placeholder="プロジェクト名" required />
+    <input type="text" name="description" placeholder="説明（任意）" />
+    <button type="submit">作成</button>
+  </form>
+  <p class="muted small">作成後、表示される RustFS プレフィックスに IaC ファイルをアップロードしてください。</p>
+</section>
+
+<section class="card">
+  <h2>一覧</h2>
+  <div
+    id="project-list"
+    hx-get="/api/partials/projects"
+    hx-trigger="load"
+    hx-swap="innerHTML"
+  >
+    <p class="muted">読み込み中…</p>
+  </div>
+</section>
+{% endblock %}

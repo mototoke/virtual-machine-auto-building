@@ -1,0 +1,40 @@
+# devcontainer 用: 開発コンテナに Terraform / Ansible CLI を含める
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - ..:/workspace:cached
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://vmapp:vmapp@postgres:5432/vmapp
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      AWS_ENDPOINT_URL: http://floci:4566
+      AZURE_BLOB_ENDPOINT: http://floci-az:4577/devstoreaccount1
+      PROXMOX_API_URL: https://mock-pve:8006
+      VSPHERE_URL: https://vcsim:8989/sdk
+    command: sleep infinity
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+      floci:
+        condition: service_healthy
+      floci-az:
+        condition: service_healthy
+      mock-pve:
+        condition: service_healthy
+    networks:
+      - vm-net
+
+  app:
+    profiles: ["full"]
+
+  worker:
+    profiles: ["full"]
+
+  rustfs-events:
+    profiles: ["full"]

@@ -1,0 +1,8 @@
+---
+# 払い出し後の構成管理（骨格）
+- name: Configure provisioned VMs
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Ping (placeholder)
+      ansible.builtin.ping:

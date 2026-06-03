@@ -1,0 +1,191 @@
+# VM 自働払い出しシステム — ローカル開発用スタック
+# floci (AWS) / floci-az (Azure) / vcsim (vSphere) / mock-pve (Proxmox) / rustfs: IaC ストア
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vmapp
+      POSTGRES_PASSWORD: vmapp
+      POSTGRES_DB: vmapp
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vmapp -d vmapp"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vm-net
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+    volumes:
+      - rustfs_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - vm-net
+
+  # Floci — LocalStack 互換 AWS エミュレータ (ポート 4566)
+  floci:
+    image: floci/floci:latest
+    ports:
+      - "4566:4566"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - vm-net
+
+  # Floci-az — ローカル Azure エミュレータ (Blob/Queue/Table/Functions, ポート 4577)
+  floci-az:
+    image: floci/floci-az:latest
+    ports:
+      - "4577:4577"
+    volumes:
+      - floci_az_data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      FLOCI_AZ_STORAGE_MODE: hybrid
+      FLOCI_AZ_STORAGE_PERSISTENT_PATH: /app/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4577/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - vm-net
+
+  # mock-pve-api — Proxmox VE REST API シミュレータ (ポート 8006, 本番と同じ)
+  mock-pve:
+    image: ghcr.io/jrjsmrtn/mock-pve-api:latest
+    ports:
+      - "8006:8006"
+    environment:
+      MOCK_PVE_VERSION: "8.3"
+      MOCK_PVE_HOST: "0.0.0.0"
+      MOCK_PVE_PORT: "8006"
+      MOCK_PVE_SSL_ENABLED: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fk https://localhost:8006/api2/json/version || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+    networks:
+      - vm-net
+
+  vcsim:
+    image: vmware/vcsim:latest
+    command: ["-l", "0.0.0.0:8989", "-dc", "1", "-cluster", "1", "-host", "3", "-vm", "10"]
+    ports:
+      - "8989:8989"
+    networks:
+      - vm-net
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://vmapp:vmapp@postgres:5432/vmapp
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      AWS_ENDPOINT_URL: http://floci:4566
+      AZURE_BLOB_ENDPOINT: http://floci-az:4577/devstoreaccount1
+      AZURE_QUEUE_ENDPOINT: http://floci-az:4577/devstoreaccount1-queue
+      AZURE_TABLE_ENDPOINT: http://floci-az:4577/devstoreaccount1-table
+      PROXMOX_API_URL: https://mock-pve:8006
+      VSPHERE_URL: https://vcsim:8989/sdk
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app:cached
+      - ./infra:/app/infra:cached
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+      floci-az:
+        condition: service_healthy
+      mock-pve:
+        condition: service_healthy
+    networks:
+      - vm-net
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker/Dockerfile
+    env_file: .env
+    environment:
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      AWS_ENDPOINT_URL: http://floci:4566
+      AZURE_BLOB_ENDPOINT: http://floci-az:4577/devstoreaccount1
+      PROXMOX_API_URL: https://mock-pve:8006
+      VSPHERE_URL: https://vcsim:8989/sdk
+      APP_URL: http://app:8000
+    volumes:
+      - ./worker:/app/worker:cached
+      - ./infra:/workspace/infra:cached
+      - pipeline_runs:/tmp/pipeline-runs
+    depends_on:
+      rustfs:
+        condition: service_healthy
+      floci:
+        condition: service_healthy
+      floci-az:
+        condition: service_healthy
+      mock-pve:
+        condition: service_healthy
+      vcsim:
+        condition: service_started
+      app:
+        condition: service_started
+    networks:
+      - vm-net
+
+  # RustFS イベント → worker へ転送（本番は RustFS ネイティブ通知に差し替え可）
+  rustfs-events:
+    build:
+      context: .
+      dockerfile: docker/rustfs-events/Dockerfile
+    env_file: .env
+    environment:
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      WEBHOOK_URL: http://worker:9002/internal/pipeline/trigger
+    depends_on:
+      rustfs:
+        condition: service_healthy
+      worker:
+        condition: service_started
+    networks:
+      - vm-net
+
+volumes:
+  postgres_data:
+  rustfs_data:
+  floci_az_data:
+  pipeline_runs:
+
+networks:
+  vm-net:
+    driver: bridge

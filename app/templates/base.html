@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }} — VM Provision</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a href="/" class="brand">VM Provision</a>
+    <nav>
+      <a href="/">ダッシュボード</a>
+      <a href="/vms">仮想マシン</a>
+      <a href="/projects">プロジェクト</a>
+    </nav>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

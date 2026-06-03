@@ -1,267 +1,185 @@
-# virtual-machine-auto-building
-VMを自動で構築する為のシステム案
+# 自働仮想マシン払い出しシステム
 
-システム構成のイメージとしては下記
+htmx + FastAPI の Web UI、RustFS 上の IaC 成果物、Terraform / Ansible パイプライン、ローカル向けクラウド／ハイパーバイザエミュレータを組み合わせた開発用雛形です。
 
-`Frontend -(WAF：ModSecurity)- Backend - Database ＆ Object Storage(Minio,RustFS,versitygw...etc) - DevopsTool/CICDTool(Jenkins, teamcity...etc)`
+> **用語**: ご指定の「floti / floti-az」は [Floci](https://floci.io/) / [Floci-az](https://github.com/floci-io/floci-az) を指す想定で、compose 上のサービス名は `floci` / `floci-az` です。
 
-```
-利用する技術スタックは「Terraform」、「Ansible」がメイン
-こうしておくことでVMwareやProxmox、Cloud(AWS,Azure,GCP...)などに対応しやすくなると思われる
+## アーキテクチャ
 
-VirtualMachineの起動や停止、メモリ・CPU変更などの処理はDevopsToolが担う
-BackendはDevopsToolに渡すパラメーターファイルの生成、StorageToolへの配置、ログイン認証やユーザー管理などを担う
+```mermaid
+flowchart LR
+  UI[htmx + FastAPI :8000]
+  PG[(PostgreSQL)]
+  RF[RustFS S3 :9000]
+  EV[rustfs-events poller]
+  WK[Worker :9002]
+  FL[Floci AWS :4566]
+  AZ[Floci-az Azure :4577]
+  PVE[mock-pve Proxmox :8006]
+  VS[vcsim vSphere :8989]
 
-
-ゴールデンイメージを予め作成しておき、テンプレート利用する事でセキュリティ強化
-Ansibleを利用しておくことで特定のパッチやUpdateをしやすくしておく
-
-更に昨今のランサムウェア攻撃などを考慮してFrontend - Backendの間にWAFTool(ModSecurity)を配置しておきたい
-
-パワーオンやパワーオフ、シャットダウンについては出来るだけAPIを介さずにTerraform,Ansibleで行いたい
-リアルタイムに画面反映が必要なものについての手立てがまだ定まっていない
-```
-
-
-↓Chatgptに相談してみる↓
-
-https://chatgpt.com/share/69526ced-64b8-800a-baa0-5f9d533fdb68
-
-# 1. 全体アーキテクチャ（完成形イメージ）
-```
-[ Frontend ]
-   |
-   | ① Job作成 / 状態取得（Polling or SSE）
-   v
-[ Backend API ]
-   - Auth / RBAC
-   - Parameter生成
-   - Job管理（DB）
-   - Webhook送信
-   |
-   | ② 設定ファイル配置
-   v
-[ Object Storage ]
- (MinIO / RustFS)
-   - tfvars
-   - inventory
-   - playbook vars
-   - log
-   |
-   | ③ Webhook
-   v
-[ DevOps Tool ]
-(Jenkins / TeamCity)
-   - Pipeline
-   - Terraform
-   - Ansible
-   |
-   | ④ Status/Log push
-   v
-[ Backend API ]
-   |
-   v
-[ Job DB ]
+  UI --> PG
+  UI --> RF
+  RF --> EV
+  EV -->|webhook| WK
+  WK -->|terraform apply| FL
+  WK -->|terraform apply| AZ
+  WK -->|terraform apply| PVE
+  WK -->|terraform apply| VS
+  WK -->|ansible-playbook| WK
 ```
 
-# 2. Job管理の責務分離（超重要）
-Backend が持つ責務
-Jobの ライフサイクル管理
-ユーザー視点の状態定義
-進捗の正規化
-DevOpsTool が持つ責務
-実行
-実行結果の通知
+### コンポーネント
 
-👉
-「Jenkinsのビルド番号＝Job ID」にはしない
-→ Backend の job_id を全てのキーにするのが正解です。
+| 役割 | 技術 | ポート |
+|------|------|--------|
+| 画面・API | FastAPI + htmx + Jinja2 | 8000 |
+| 状態管理 | PostgreSQL | 5432 |
+| IaC ストア | RustFS (S3 互換) | 9000 / 9001 |
+| 変更検知 | rustfs-events (ポーリング) | — |
+| 払い出し実行 | worker (Terraform + Ansible) | 9002 |
+| クラウド（AWS） | Floci | 4566 |
+| クラウド（Azure） | Floci-az | 4577 |
+| ハイパーバイザ（VMware） | vcsim | 8989 |
+| ハイパーバイザ（Proxmox） | mock-pve-api | 8006 |
 
+### 仮想マシン管理（実装済み）
 
-# 3. Jobステータスモデル（実用レベル）
+Web UI **仮想マシン** (`/vms`) から以下を操作できます。
 
-## Job状態（Backend視点）
-```
-CREATED        ← Job登録
-QUEUED         ← Webhook送信済
-RUNNING        ← Jenkins/TeamCity開始
-PROVISIONING   ← Terraform apply
-CONFIGURING    ← Ansible
-VERIFYING      ← 確認処理（任意）
-SUCCESS
-FAILED
-CANCELED
-```
+| 機能 | Proxmox (mock-pve) | vSphere (vcsim) | AWS EC2 (Floci) |
+|------|-------------------|-----------------|-----------------|
+| 起動状態表示 | ○ | ○ | ○ |
+| 電源 ON/OFF・再起動 | ○ | ○ | ○ |
+| CPU / メモリ変更 | ○ (cores/memory) | ○ (ReconfigVM) | ○ (instance type) |
+| ディスク変更 | ○ (resize API) | ○ (仮想ディスク容量) | ○ (EBS modify_volume) |
 
-## DB例
-```
-jobs
-------
-job_id (UUID)
-job_type        -- CREATE_VM / POWER_ON / UPDATE_VM
-status
-current_phase
-requested_by
-devops_job_url
-created_at
-started_at
-finished_at
-error_summary
-```
+API: `GET/POST /api/vms/...` — 詳細はアプリ起動後の `/docs` を参照。
+
+### DevOps フロー
+
+1. Web UI で **プロジェクト** を作成 → RustFS プレフィックスが発行される
+2. `projects/terraform/{id}/` に `.tf` をアップロード → worker が Terraform apply
+3. `projects/ansible/{id}/` に playbook を配置 → Ansible で構築後設定
+4. 実行ログは worker コンテナ内 `/tmp/pipeline-runs`（将来 DB 連携）
+
+## ディレクトリ構成
 
 ```
-job_events
------------
-id
-job_id
-timestamp
-level           -- INFO / WARN / ERROR
-message
+vm_work/
+├── .devcontainer/          # VS Code / Cursor Dev Container
+├── app/                    # FastAPI + htmx
+├── worker/                 # パイプライン worker
+├── infra/
+│   ├── terraform/environments/local/
+│   └── ansible/
+├── docker/                 # 各サービス Dockerfile
+├── scripts/init-rustfs.sh
+├── docker-compose.yml
+└── pyproject.toml
 ```
 
-# 4. 実際の処理フロー（VM作成例）
+## クイックスタート
 
-### ① Frontend → Backend（Job作成）
-```
-POST /api/jobs
-{
-  "type": "CREATE_VM",
-  "params": {
-    "cpu": 4,
-    "memory": 8192,
-    "os": "rockylinux9"
-  }
-}
+### 1. 環境ファイル
+
+```bash
+cp .env.example .env
 ```
 
-- Backend：<br />
-job_id 発行<br />
-Jobを CREATED で登録
+### 2. スタック起動
 
-### ② Backend → Storage（ファイル生成）
-```
-s3://iac-bucket/jobs/{job_id}/
-  ├ terraform.tfvars.json
-  ├ inventory.ini
-  ├ ansible_vars.yml
-```
-✔ Terraform / Ansible は job_id だけ知っていればOK
-
-### ③ Backend → DevOpsTool（Webhook）
-```
-POST https://jenkins/webhook/run
-
-{
-  "job_id": "xxxx-xxxx",
-  "bucket": "iac-bucket",
-  "path": "jobs/xxxx-xxxx",
-  "operation": "CREATE_VM"
-}
+```bash
+docker compose up -d --build
 ```
 
-- Backend：<br />
-job status → QUEUED
+### 3. RustFS バケット初期化
 
-### ④ DevOpsTool Pipeline（実行）
-Jenkins Pipeline（概念）
-```
-pipeline {
-  stages {
-    stage('Start') {
-      steps {
-        notify('RUNNING', 'Job started')
-      }
-    }
-
-    stage('Terraform Apply') {
-      steps {
-        notify('PROVISIONING', 'Terraform apply started')
-        sh "terraform apply -var-file=tfvars.json -auto-approve"
-      }
-    }
-
-    stage('Ansible') {
-      steps {
-        notify('CONFIGURING', 'Ansible started')
-        sh "ansible-playbook -i inventory.ini site.yml"
-      }
-    }
-  }
-  post {
-    success {
-      notify('SUCCESS', 'Completed successfully')
-    }
-    failure {
-      notify('FAILED', 'Execution failed')
-    }
-  }
-}
+```bash
+docker compose exec dev bash scripts/init-rustfs.sh
+# またはホストから aws cli で .env のエンドポイントへ
 ```
 
-### ⑤ DevOpsTool → Backend（ステータスPush）
-```
-POST /api/jobs/{job_id}/events
-{
-  "status": "PROVISIONING",
-  "message": "Creating VM"
-}
-```
-✔ ここが疑似リアルタイムの要
+### 4. アクセス
 
+- Web UI: http://localhost:8000
+- VM 管理: http://localhost:8000/vms
+- RustFS Console: http://localhost:9001
+- Floci (AWS): http://localhost:4566
+- Floci-az (Azure): http://localhost:4577
+- mock-pve (Proxmox API): https://localhost:8006
+- vcsim: https://localhost:8989/sdk
 
-# 5. フロントエンドのポーリング設計
-ポーリングAPI
-```
-GET /api/jobs/{job_id}
-```
+疎通確認: `bash scripts/verify-emulators.sh`
 
-レスポンス例：
-```
-{
-  "job_id": "xxxx",
-  "status": "CONFIGURING",
-  "current_phase": "Ansible",
-  "progress": 65,
-  "last_message": "Installing security patches"
-}
-```
-- ポーリング間隔<br />
-2〜5秒（十分）
-Job完了後は停止
+## Dev Container
 
-# 6. Terraform / Ansible の「進捗感」を出すコツ
-- Terraform
-- - phase 単位で進捗を切る
-- - apply 前後で通知
+1. Cursor / VS Code で **Reopen in Container**
+2. `postCreateCommand` で Python 依存と `.env` を準備
+3. 開発コンテナ内に Terraform / Ansible CLI 済み
 
-```shell:
-10%  Terraform init
-40%  Terraform apply
+`docker-compose.devcontainer.yml` の `dev` サービスがメイン。フルスタックは compose プロファイル `full` で app / worker を追加可能。
+
+## ローカルエミュレータ設定
+
+### Floci (AWS)
+
+```bash
+export AWS_ENDPOINT_URL=http://localhost:4566
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
 ```
 
-- Ansible
-- - callback plugin で task 開始/完了を通知
-- - role 単位で progress を加算
+Terraform の `infra/terraform/environments/local` は `aws_endpoint` / vSphere provider をローカル向けに設定済みです。
 
-👉 「正確さ」より「納得感」
+### Floci-az (Azure)
 
-# 7. この構成の強み
+Blob / Queue / Table / Functions はすべて **4577** で提供されます（Azurite 互換アカウント `devstoreaccount1`）。
 
-- ✔ マルチ基盤対応しやすい
-- ✔ DevOpsTool差し替え可能
-- ✔ Backendが一切Terraform/Ansibleを知らなくてよい
-- ✔ リトライ・再実行・監査ログが容易
-- ✔ 将来Argo / GitOps にも寄せられる
+```bash
+export AZURE_BLOB_ENDPOINT=http://localhost:4577/devstoreaccount1
+export AZURE_STORAGE_ACCOUNT=devstoreaccount1
+# キーは .env.example の AZURE_STORAGE_KEY を参照
+```
 
-# 8. よくある失敗と回避策
+Azure Functions を使う場合は Docker ソケットのマウントが必須です（`docker-compose.yml` 済み）。
 
+詳細: `infra/terraform/modules/azure/README.md`
 
-| 失敗                          | 回避           |
-| --------------------------- | ------------ |
-| Jenkins状態を直接参照              | Backendに必ず集約 |
-| Terraform state をBackendで管理 | Storageに集約   |
-| リアルタイムに拘りすぎる                | 疑似で十分        |
-| Job粒度が粗すぎる                  | Phase設計を丁寧に  |
+### mock-pve (Proxmox)
 
+[mock-pve-api](https://github.com/jrjsmrtn/mock-pve-api) は PVE 8.x REST API の軽量シミュレータです。初期ノード `pve-node1` / `pve-node2` が含まれます。
 
+```bash
+curl -k https://localhost:8006/api2/json/version
 
+# 認証例
+curl -k -X POST https://localhost:8006/api2/json/access/ticket \
+  -d "username=root@pam&password=secret"
+```
+
+Terraform 向けメモ: `infra/terraform/modules/proxmox/README.md`
+
+> **フル Proxmox クラスタ**（KVM/LXC 実動）が必要な場合は [containerized-proxmox](https://github.com/LongQT-sea/containerized-proxmox) 等の別スタックを検討してください。本雛形は API 統合テスト向けに mock-pve を採用しています。
+
+### vcsim (VMware)
+
+```bash
+export GOVC_URL=https://user:pass@localhost:8989/sdk
+export GOVC_INSECURE=1
+```
+
+インベントリ名（`DC0`, `LocalDS_0` 等）は vcsim デフォルトモデルに合わせています。ホスト数を変える場合は `docker-compose.yml` の `vcsim` コマンド引数を調整してください。
+
+## 次の実装ステップ（推奨）
+
+- [ ] worker → FastAPI へ run 状態を POST（`ProvisionRun` 連携）
+- [ ] RustFS ネイティブイベント通知で poller を置き換え
+- [ ] プロジェクトごとの Terraform state を S3 backend（RustFS）へ
+- [ ] 認証（OIDC / 社内 IdP）
+- [ ] Floci-gcp を compose に追加
+- [ ] Proxmox / Azure 向け Terraform モジュールを worker パイプラインに統合
+
+## ライセンス
+
+社内利用を想定した雛形です。Floci / Floci-az / mock-pve-api / vcsim / RustFS は各プロジェクトのライセンスに従ってください。

@@ -1,0 +1,18 @@
+{% if projects %}
+<table class="table">
+  <thead>
+    <tr><th>ID</th><th>名前</th><th>Terraform プレフィックス</th></tr>
+  </thead>
+  <tbody>
+  {% for p in projects %}
+    <tr>
+      <td><code>{{ p.id }}</code></td>
+      <td>{{ p.name }}</td>
+      <td><code>{{ p.rustfs_terraform_prefix }}</code></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">プロジェクトがありません。上のフォームから作成してください。</p>
+{% endif %}

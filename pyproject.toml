@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "worker*"]
+
+[project]
+name = "vm-provision-system"
+version = "0.1.0"
+description = "自働仮想マシン払い出しシステム (htmx + FastAPI)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.12",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "pydantic-settings>=2.6.0",
+    "httpx>=0.28.0",
+    "boto3>=1.35.0",
+    "pyvmomi>=8.0.0",
+]
+
+[project.optional-dependencies]
+worker = [
+    "ansible-runner>=2.4.0",
+    "python-terraform>=0.10.1",
+]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

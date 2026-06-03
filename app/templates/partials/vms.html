@@ -1,0 +1,31 @@
+{% if vms %}
+<table class="table vm-table">
+  <thead>
+    <tr>
+      <th>名前</th>
+      <th>プロバイダ</th>
+      <th>状態</th>
+      <th>CPU</th>
+      <th>メモリ</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for vm in vms %}
+    <tr
+      class="vm-row"
+      hx-get="/api/vms/partials/detail/{{ vm.provider.value }}/{{ vm.external_id }}"
+      hx-target="#vm-detail"
+      hx-swap="innerHTML"
+    >
+      <td>{{ vm.name }}</td>
+      <td><span class="badge">{{ vm.provider.value }}</span></td>
+      <td><span class="power power-{{ vm.power_state.value }}">{{ vm.power_state.value }}</span></td>
+      <td>{{ vm.cpus or "—" }}</td>
+      <td>{% if vm.memory_mb %}{{ vm.memory_mb }} MB{% else %}—{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">VM がありません。エミュレータが起動しているか確認してください。</p>
+{% endif %}
